@@ -169,6 +169,7 @@ func ldapAuthBackendResource() *schema.Resource {
 			Computed:  true,
 			Sensitive: true,
 		},
+		"tune": authMountTuneSchema(),
 	}
 
 	addTokenFields(fields, &addTokenFieldsConfig{})
@@ -338,6 +339,20 @@ func ldapAuthBackendUpdate(ctx context.Context, d *schema.ResourceData, meta int
 	}
 	log.Printf("[DEBUG] Wrote LDAP config %q", path)
 
+	if d.HasChange("tune") {
+		log.Printf("[INFO] LDAP Auth '%q' tune configuration changed", d.Id())
+		if raw, ok := d.GetOk("tune"); ok {
+			log.Printf("[DEBUG] Writing ldap auth tune to '%q'", path)
+
+			err := authMountTune(client, path, raw)
+			if err != nil {
+				return nil
+			}
+
+			log.Printf("[INFO] Written ldap auth tune to '%q'", path)
+		}
+	}
+
 	return ldapAuthBackendRead(ctx, d, meta)
 }
 
@@ -383,6 +398,12 @@ func ldapAuthBackendRead(_ context.Context, d *schema.ResourceData, meta interfa
 		return diag.FromErr(err)
 	}
 
+	log.Printf("[DEBUG] Reading ldap auth tune from '%q/tune'", path)
+	rawTune, err := authMountTuneGet(client, path)
+	if err != nil {
+		return diag.Errorf("error reading tune information from Vault: %q", err)
+	}
+
 	d.Set("url", resp.Data["url"])
 	d.Set("starttls", resp.Data["starttls"])
 	d.Set("tls_min_version", resp.Data["tls_min_version"])
@@ -403,6 +424,7 @@ func ldapAuthBackendRead(_ context.Context, d *schema.ResourceData, meta interfa
 	d.Set("groupattr", resp.Data["groupattr"])
 	d.Set("username_as_alias", resp.Data["username_as_alias"])
 	d.Set("use_token_groups", resp.Data["use_token_groups"])
+	d.Set("tune", []map[string]interface{}{rawTune})
 
 	// `bindpass`, `client_tls_cert` and `client_tls_key` cannot be read out from the API
 	// So... if they drift, they drift.
